@@ -5,8 +5,8 @@ import cv2
 def load(img):
 
     from line_extraction import gauss_kernel, extraction
-    from line_thining import thin
-    from morphology import process, prune, structuring_element_of_four_connected_to_eight_connected, structuring_element_of_juction, structuring_element_of_endpoint
+    from line_thining import thin, prune
+    from morphology import process, eight_connected, compute_juction, compute_endpoint
     def next_odd(x):
         return x if x % 2 == 1 else x + 1
     def remove_background(img):
@@ -23,14 +23,19 @@ def load(img):
         return img
 
     H, W = img.shape[:2]
+    img = cv2.GaussianBlur(img, (3, 3), 0)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    w = (2, 4, 8, 16, 32)
-    T = [gauss_kernel(kernel_size=next_odd(int(7 * x / 3)), sigma=(x / 3)) for x in w]
-    img = extraction(img, T)
-    for x, y in np.ndindex((H, W)):
-        img[x, y] = 255 if img[x, y] < 0.1 else 0
-    img = img.astype(np.uint8)
-    img = remove_background(img)
+    img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    img[img == 255] = 254
+    img[img == 0] = 255
+    img[img == 254] = 0
+    # w = (2, 4, 8, 16, 32)
+    # T = [gauss_kernel(kernel_size=next_odd(int(7 * x / 3)), sigma=(x / 3)) for x in w]
+    # img = extraction(img, T)
+    # for x, y in np.ndindex((H, W)):
+    #     img[x, y] = 255 if img[x, y] < 0.1 else 0
+    # img = img.astype(np.uint8)
+    # img = remove_background(img)
     # cv2.imwrite('before.png', img)
 
     img = thin(img)

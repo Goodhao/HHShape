@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import os
 import time
 import copy
 import sys
@@ -20,8 +21,12 @@ color_stroke = [0, 255, 0] # green in BGR mode
 
 from loader import load, build_sketch, build_region
 
-filename = sys.argv[1] if len(sys.argv) > 1 else 'bear_out.png'
-sample = cv2.imread(filename)
+filename = sys.argv[1] if len(sys.argv) > 1 else 'bear.png'
+path = os.path.join('img', filename)
+original = cv2.imread(path)
+sample = load(original)
+path = os.path.join('img', f'out_{filename}')
+cv2.imwrite(path, sample)
 H, W = sample.shape[:2]
 
 sketch, which_stroke = build_sketch(sample)
@@ -190,6 +195,7 @@ def is_component_stroke(i, k):
     return False
 
 def component_completion(k):
+    global region
     s = stroke_sets[k]
     candidate_strokes = []
     for i in range(len(s)):
@@ -213,7 +219,7 @@ def component_completion(k):
                     p1, p2 = candidate_strokes[last][-1], candidate_strokes[i][0]
                     t1, t2 = fit_tangent(candidate_strokes[last][-15:], p1), fit_tangent(candidate_strokes[i][:15], p2)
                     V = [np.array(p1), np.array(p1) + np.array(t1), np.array(p2) + np.array(t2), np.array(p2)]
-                    curve, _, _ = close_curve(V)
+                    curve, _, _ = close_curve(V, region)
                     new_strokes.append(curve)
             else:
                 first = i
@@ -223,7 +229,7 @@ def component_completion(k):
         p1, p2 = candidate_strokes[last][-1], candidate_strokes[first][0]
         t1, t2 = fit_tangent(candidate_strokes[last][-15:], p1), fit_tangent(candidate_strokes[first][:15], p2)
         V = [np.array(p1), np.array(p1) + np.array(t1), np.array(p2) + np.array(t2), np.array(p2)]
-        curve, _, _ = close_curve(V)
+        curve, _, _ = close_curve(V, region)
         new_strokes.append(curve)
     return new_strokes
 
@@ -287,7 +293,7 @@ def fitness(arrows, out=False, show=False):
         if show:
             print(s, '完整部件' if is_obj else '不完整部件')
             part_show(k)
-            time.sleep(2)
+            time.sleep(1)
 
     to_draw = [True for i in range(len(stroke_sets))]
     img = np.zeros((H, W))

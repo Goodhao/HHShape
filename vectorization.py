@@ -226,23 +226,12 @@ def dedupe(curve, V):
     return _curve, _V
 
 
-def close_curve(V, bounds=[(0, 15), (0, 15)]):
-    t = ['' for i in range(2)]
-    bounds = [(0, np.linalg.norm(V[0] - V[-1])), (0, np.linalg.norm(V[0] - V[-1]))]
-    t[0] = unit(V[0] - V[1])
-    t[1] = unit(V[len(V) - 1] - V[len(V) - 2])
-    # V[0][0] + k1 * t[0][0] = V[len(V) - 1][0] + k2 * t[1][0]
-    # V[0][1] + k1 * t[0][1] = V[len(V) - 1][1] + k2 * t[1][1]
-    A = np.array([[t[0][0], -t[1][0]], [t[0][1], -t[0][1]]])
-    b = np.array([V[len(V) - 1][0] - V[0][0], V[len(V) - 1][1] - V[0][1]])
-    try:
-        sol = np.linalg.solve(A, b)
-        if (sol > 0).all() and (sol < bounds[0][0]).all():
-            bounds=[(0, 0.5 * sol[0]), (0, 0.5 * sol[1])]
-    except:
-        pass
-    
-    res = minimize(objective, [0.5 * bounds[0][1], 0.5 * bounds[1][1]], args=V, method='powell', bounds=bounds)
+def close_curve(V, region):
+    H, W = region.shape[:2]
+    t = [unit(V[0] - V[1]), unit(V[-1] - V[-2])]
+    bound = 0.5 * np.linalg.norm(V[0] - V[-1])
+    bounds = [(0, bound), (0, bound)]
+    res = minimize(objective, [0.9 * bound, 0.9 * bound], args=V, method='powell', bounds=bounds)
     alpha = np.squeeze(res.x)
     # print(alpha)
     
