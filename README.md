@@ -15,19 +15,19 @@ Here we take image `bear.png` as example to demonstrate how to use our tool.
 ```bash
 python decompose.py bear.png
 ```
-This command will load `bear.png` and execute program.
-After loading image, which may take few minutes, you will see the following screen:
+This command will load `bear.png` and execute program.  
+After loading image, which may take few minutes, you will see the following screen:  
 
 ![](demo.png)
 
-There are red arrows attched to each stroke. What do they mean?
-First, we define region as the place surrounded by strokes.
-Second, our algorithm will assign an unique ID for each region.
-Third, it worth noting that each stroke has two sides belonging to two regions A, B.
+There are red arrows attched to each stroke. What do they mean?  
+First, we define region as the place surrounded by strokes.  
+Second, our algorithm will assign an unique ID for each region.  
+Third, it worth noting that each stroke has two sides belonging to two regions A, B.  
 
-The arrow represent the orientation of the stroke, i.e., whether or not the region A occludes region B by this stroke. if A occludes B, then the arrow of this stroke will point from A to B, and vice versa.
+The arrow represent the orientation of the stroke, i.e., whether or not the region A occludes region B by this stroke.   if A occludes B, then the arrow of this stroke will point from A to B, and vice versa.  
 
-Our algorithm will automatically find out a configuration of arrows, based on local convexity of shapes.
+Our algorithm will automatically find out a configuration of arrows, based on local convexity of shapes.  
 
 You can do:
 - Press <kbd>Enter</kbd> to decompose shape components of this image.
