@@ -17,6 +17,7 @@ python decompose.py bear.png
 ```
 This command will load `bear.png` and execute program.
 After loading image, which may take few minutes, you will see the following screen:
+
 ![](demo.png)
 
 There are red arrows attched to each stroke. What do they mean?
