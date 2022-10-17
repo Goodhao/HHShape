@@ -162,23 +162,21 @@ def score(I):
 def detect_ring(tree):
     vis = []
     ring = []
-    def search(x, fa):
+    def search(x):
         vis.append(x)
         for y in tree[x]:
-            if y == fa:
-                continue
             if y in vis:
                 ring.append(y)
                 while len(vis) > 0 and vis[-1] != y:
                     ring.append(vis.pop())
                 return True
             else:
-                if search(y, x):
+                if search(y):
                     return True
         vis.pop()
         return False
     for i in range(len(tree)):
-        if search(i, -1):
+        if search(i):
             return ring
     return []
 
@@ -260,9 +258,9 @@ def fitness(arrows, out=False, show=False):
         for i in s:
             if len(belong[i]) != 2:
                 continue
-            k2 = belong[i][0] if belong[i][1] == k else belong[i][1]
             if arrows[i] == 2:
                 continue
+            k2 = belong[i][0] if belong[i][1] == k else belong[i][1]
             swap = is_component_stroke(i, k)
             if swap:
                 k, k2 = k2, k
@@ -280,6 +278,7 @@ def fitness(arrows, out=False, show=False):
                     tree[k].pop()
             if swap:
                 k, k2 = k2, k
+
 
     top_obj = [1 for _ in range(len(stroke_sets))]
     for k, s in enumerate(stroke_sets):
@@ -321,7 +320,7 @@ def fitness(arrows, out=False, show=False):
 def dfs(L, x):
     global best
     global opt_arrows
-    if x < len(L) - 1:
+    if x < len(L):
         arrows[L[x]] = 0
         dfs(L, x + 1)
         arrows[L[x]] = 1
@@ -404,7 +403,8 @@ global_score, score_per_region, to_modify = fitness(arrows)
 k = np.argmin(score_per_region)
 to_modify += stroke_sets[k]
 to_modify = list(set(to_modify))
-dfs(to_modify, 0)
+if len(to_modify) < 5:
+    dfs(to_modify, 0)
 arrows = opt_arrows
 show_arrows()
 
