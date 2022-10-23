@@ -37,29 +37,27 @@ def compute_endpoint():
     return hit_miss
 
 
-def process(I, E, in_place=False):
-    I = np.array(I).astype(np.uint8)
-    res = np.zeros(I.shape)
+def process(I, P, E, in_place=False):
+    res = set()
     H, W = I.shape[0], I.shape[1]
-    for x in range(H):
-        for y in range(W):
-            for k in range(len(E)):
-                drop = True
-                for i in range(-1, 2):
-                    for j in range(-1, 2):
-                        val = I[x + i, y + j] if 0 <= x + i < H and 0 <= y + j < W else 0
-                        if E[k][1 + i, 1 + j] == 1 and val == 0:
-                            drop = False
-                        if E[k][1 + i, 1 + j] == 0 and val != 0:
-                            drop = False
-                if in_place:
-                    if drop:
-                        I[x, y] = 0
-                        break
-                else:
-                    if drop:
-                        res[x, y] = 1
-                        break
+    for x, y in P:
+        for k in range(len(E)):
+            drop = True
+            for i in range(-1, 2):
+                for j in range(-1, 2):
+                    val = I[x + i, y + j] if 0 <= x + i < H and 0 <= y + j < W else 0
+                    if E[k][1 + i, 1 + j] == 1 and val == 0:
+                        drop = False
+                    if E[k][1 + i, 1 + j] == 0 and val != 0:
+                        drop = False
+            if in_place:
+                if drop:
+                    I[x, y] = 0
+                    break
+            else:
+                if drop:
+                    res.add((x, y))
+                    break
     if in_place:
         return I
     else:

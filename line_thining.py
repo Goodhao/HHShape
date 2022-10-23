@@ -2,7 +2,6 @@ import numpy as np
 
 def thin(I):
     # 要求 I 是像素值∈{0, 255}的二值化图像
-    I = np.array(I).astype(np.uint8)
     H, W = I.shape
     I[I == 255] = 1
     cnt = 0
@@ -42,45 +41,43 @@ def thin(I):
     return I
 
 
-def prune(I, is_endpoint, is_junction):
+def prune(I, P, endpoint, junction):
     update = False
-    H, W = I.shape
-    for x in range(H):
-        for y in range(W):
-            if I[x, y] == 0:
-                continue
-            alone = True
-            for i in range(-1, 2):
-                for j in range(-1, 2):
-                    if not (i == 0 and j == 0):
-                        if 0 <= x + i < H and 0 <= y + j < W and I[x + i, y + j] != 0:
-                            alone = False
-                            break
-            if alone:
-                I[x, y] = 0
-                update = True
-    for x in range(H):
-        for y in range(W):
-            if is_endpoint[x, y] and I[x, y] != 0:
-                queue = [(x, y)]
-                I[x, y] = 0
-                update = True
-                cur = 0
-                while cur < len(queue):
-                    x, y = queue[cur]
-                    cur += 1
-                    stop = False
-                    for i in range(-1, 2):
-                        for j in range(-1, 2):
-                            if not (i == 0 and j == 0):
-                                if 0 <= x + i < H and 0 <= y + j < W and I[x + i, y + j] != 0 and is_junction[x + i, y + j]:
-                                    stop = True
-                    if stop:
-                        continue
-                    for i in range(-1, 2):
-                        for j in range(-1, 2):
-                            if not (i == 0 and j == 0):
-                                if 0 <= x + i < H and 0 <= y + j < W and I[x + i, y + j] != 0 and not is_junction[x + i, y + j]:
-                                    I[x + i, y + j] = 0
-                                    queue.append((x + i, y + j))
+    H, W = I.shape[:2]
+    for x, y in P:
+        if I[x, y] == 0:
+            continue
+        alone = True
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                if not (i == 0 and j == 0):
+                    if 0 <= x + i < H and 0 <= y + j < W and I[x + i, y + j] != 0:
+                        alone = False
+                        break
+        if alone:
+            I[x, y] = 0
+            update = True
+    for x, y in endpoint:
+        if I[x, y] != 0:
+            queue = [(x, y)]
+            I[x, y] = 0
+            update = True
+            cur = 0
+            while cur < len(queue):
+                x, y = queue[cur]
+                cur += 1
+                stop = False
+                for i in range(-1, 2):
+                    for j in range(-1, 2):
+                        if not (i == 0 and j == 0):
+                            if 0 <= x + i < H and 0 <= y + j < W and I[x + i, y + j] != 0 and (x + i, y + j) in junction:
+                                stop = True
+                if stop:
+                    continue
+                for i in range(-1, 2):
+                    for j in range(-1, 2):
+                        if not (i == 0 and j == 0):
+                            if 0 <= x + i < H and 0 <= y + j < W and I[x + i, y + j] != 0 and not (x + i, y + j) in junction:
+                                I[x + i, y + j] = 0
+                                queue.append((x + i, y + j))
     return I, update

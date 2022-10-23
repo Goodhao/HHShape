@@ -226,8 +226,7 @@ def dedupe(curve, V):
     return _curve, _V
 
 
-def close_curve(V, region):
-    H, W = region.shape[:2]
+def close_curve(V):
     t = [unit(V[0] - V[1]), unit(V[-1] - V[-2])]
     bound = 0.5 * np.linalg.norm(V[0] - V[-1])
     bounds = [(0, bound), (0, bound)]
@@ -243,6 +242,6 @@ def close_curve(V, region):
     b = [v0[1], v1[1], v2[1], v3[1]]
     nodes = np.asfortranarray([a, b])
     new_curve = bezier.Curve(nodes, degree=3)
-    u = np.linspace(0.0, 1.0, 100)
+    u = np.linspace(0.0, 1.0, 20)
     new_curve = np.transpose(new_curve.evaluate_multi(u)).tolist()
     return new_curve, [v0, v1, v2, v3], res.fun

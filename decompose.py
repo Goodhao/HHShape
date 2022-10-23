@@ -15,6 +15,7 @@ from matplotlib.backend_bases import key_press_handler
 from shapely.geometry import Point, LineString, MultiPoint
 from shapely.geometry.polygon import Polygon
 from vectorization import fit_tangent, close_curve
+from datetime import datetime
 
 color_junction = [255, 0, 0] # blue in BGR mode
 color_stroke = [0, 255, 0] # green in BGR mode
@@ -37,6 +38,9 @@ def dist(p, q):
     q = np.array(q)
     return np.linalg.norm(p - q)
 
+def dist_to_stroke(p, stroke):
+    return min(dist(p, stroke[0]), dist(p, stroke[-1]))
+
 for k, s in enumerate(stroke_sets):
     s = list(s)
     for i in range(len(s) - 1):
@@ -44,10 +48,7 @@ for k, s in enumerate(stroke_sets):
         d = []
         for j in range(i + 1, len(s)):
             q = sketch[s[j]]
-            val = 1e10
-            for u in [0, -1]:
-                for v in [0, -1]:
-                    val = min(val, dist(p[u], q[v]))
+            val = np.min([dist(p[u], q[v]) for u in [0, -1] for v in [0, -1]])
             d.append(val)
         idx = np.argmin(d) + i + 1
         s[i + 1], s[idx] = s[idx], s[i + 1]
@@ -59,31 +60,26 @@ for idx in range(len(sketch)):
     for i, s in enumerate(stroke_sets):
         if idx in s:
             belong[-1].append(i)
-print(belong)
+print('belong', belong)
 
-def area(s, sketch=sketch):
+def get_boundary(s):
     points = []
     for i in range(len(s) - 1):
         p = sketch[s[i]]
         q = sketch[s[i + 1]]
-        d = []
-        for u in [0, -1]:
-            d.append(min(dist(p[u], q[0]), dist(p[u], q[-1])))
-        if np.argmin(d) == 0:
-            points += list(reversed(p))
-        else:
-            points += p
+        d = [dist_to_stroke(p[u], q) for u in [0, -1]]
+        points += p if np.argmin(d) == 1 else list(reversed(p))
         if i == len(s) - 2:
-            d = []
-            for u in [0, -1]:
-                d.append(min(dist(q[u], p[0]), dist(q[u], p[-1])))
-            if np.argmin(d) == 0:
-                points += q
-            else:
-                points += list(reversed(q))
+            d = [dist_to_stroke(q[u], p) for u in [0, -1]]
+            points += q if np.argmin(d) == 0 else list(reversed(q))
     if len(s) == 1:
         points = sketch[s[0]]
-    polygon = Polygon(points)
+    return points
+
+region_boundary = [get_boundary(s) for s in stroke_sets]
+
+def area(s):
+    polygon = Polygon(get_boundary(s)).buffer(0.01)
     return polygon.area
 
 arrows = [0 for _ in range(len(sketch))]
@@ -105,82 +101,39 @@ for i in range(len(arrows)):
             sketch[i] = tmp
         arrows[i] = np.argmin(res)
 
-def draw_component(img, strokes, ID=0):
-    # 默认strokes已经排好序（包括每个stroke内部的点）
-    pixels = []
-    points = []
-    for stroke in strokes:
-        points += stroke
-    points.append(points[0])
-    for i in range(len(points)):
-        p0 = points[i - 1]
-        p1 = points[i]
-        pixels += [list(_) for _ in bresenham(int(p0[0]), int(p0[1]), int(p1[0]), int(p1[1]))]
-    pixels2 = np.array(pixels, dtype=np.int32)
-    for i in range(len(pixels2)):
-        pixels2[i][0], pixels2[i][1] = pixels2[i][1], pixels2[i][0]
-    cv2.fillPoly(img, pts=[pixels2], color=ID)
-    for p in pixels:
-        if 0 <= p[0] < H and 0 <= p[1] < W:
-            img[p[0], p[1]] = 255
-
-def draw_component2(img, points, ID=0):
-    pixels = []
-    points.append(points[0])
-    for i in range(len(points)):
-        p0 = points[i - 1]
-        p1 = points[i]
-        pixels += [list(_) for _ in bresenham(int(p0[0]), int(p0[1]), int(p1[0]), int(p1[1]))]
-    pixels2 = np.array(pixels, dtype=np.int32)
-    for i in range(len(pixels2)):
-        pixels2[i][0], pixels2[i][1] = pixels2[i][1], pixels2[i][0]
-    cv2.fillPoly(img, pts=[pixels2], color=ID)
-    for p in pixels:
-        if 0 <= p[0] < H and 0 <= p[1] < W:
-            img[p[0], p[1]] = 255
-
-def score(I):
-    assert I.shape == region.shape
+def score(component, show=False):
+    polys = dict()
+    for k, points in component:
+        polys[k] = Polygon(points).buffer(0.01)
     res = []
     for i in range(len(stroke_sets)):
-        region_area = 0
-        cover_area = 0
-        hidden_area = 0
-        for x in range(H):
-            for y in range(W):
-                if region[x, y] == i + 2:
-                    region_area += 1
-                    if I[x, y] == i + 1:
-                        cover_area += 1
-                elif I[x, y] == i + 1:
-                    hidden_area += 1
+        poly_region = Polygon(region_boundary[i]).buffer(0.01)
+        region_area = poly_region.area
+        if i in polys.keys():
+            cover_area = polys[i].intersection(poly_region).area
+            hidden_area = polys[i].difference(poly_region).area
+        else:
+            cover_area, hidden_area = 0, 0
         hidden_area_ratio = hidden_area / region_area
         cover_area_ratio = cover_area / region_area
         res.append(0.7 * cover_area_ratio + 0.3 * hidden_area_ratio)
+    if show:
+        plt.clf()
+        ax.set_aspect(1)
+        plt.xlim(0, W)
+        plt.ylim(0, H)
+        for i in range(len(stroke_sets)):
+            if i in polys.keys():
+                xx, yy = polys[i].exterior.coords.xy
+                X = np.array(xx.tolist())
+                Y = np.array(yy.tolist())
+                plt.plot(Y, H - X, color='r')
+        plt.axis('off')
+        canvas.draw()
+        canvas.get_tk_widget().pack()
     return np.sum(res) / len(res), res
 
-def detect_ring(tree):
-    vis = []
-    ring = []
-    def search(x):
-        vis.append(x)
-        for y in tree[x]:
-            if y in vis:
-                ring.append(y)
-                while len(vis) > 0 and vis[-1] != y:
-                    ring.append(vis.pop())
-                return True
-            else:
-                if search(y):
-                    return True
-        vis.pop()
-        return False
-    for i in range(len(tree)):
-        if search(i):
-            return ring
-    return []
-
-def is_component_stroke(i, k):
+def is_component_stroke(arrows, i, k):
     assert i in stroke_sets[k]
     if len(belong[i]) == 1:
         return True
@@ -192,8 +145,7 @@ def is_component_stroke(i, k):
         return True
     return False
 
-def component_completion(k):
-    global region
+def component_completion(arrows, k):
     s = stroke_sets[k]
     candidate_strokes = []
     for i in range(len(s)):
@@ -211,13 +163,13 @@ def component_completion(k):
     last = -1
     first = -1
     for i in range(len(s)):
-        if is_component_stroke(s[i], k):
+        if is_component_stroke(arrows, s[i], k):
             if last != -1:
                 if last != i - 1:
                     p1, p2 = candidate_strokes[last][-1], candidate_strokes[i][0]
                     t1, t2 = fit_tangent(candidate_strokes[last][-15:], p1), fit_tangent(candidate_strokes[i][:15], p2)
                     V = [np.array(p1), np.array(p1) + np.array(t1), np.array(p2) + np.array(t2), np.array(p2)]
-                    curve, _, _ = close_curve(V, region)
+                    curve, _, _ = close_curve(V)
                     new_strokes.append(curve)
             else:
                 first = i
@@ -227,14 +179,15 @@ def component_completion(k):
         p1, p2 = candidate_strokes[last][-1], candidate_strokes[first][0]
         t1, t2 = fit_tangent(candidate_strokes[last][-15:], p1), fit_tangent(candidate_strokes[first][:15], p2)
         V = [np.array(p1), np.array(p1) + np.array(t1), np.array(p2) + np.array(t2), np.array(p2)]
-        curve, _, _ = close_curve(V, region)
+        curve, _, _ = close_curve(V)
         new_strokes.append(curve)
     return new_strokes
 
 def part_show(k):
+    global arrows
     s = stroke_sets[k]
     print(s)
-    new_strokes = component_completion(k)
+    new_strokes = component_completion(arrows, k)
     plt.clf()
     ax.set_aspect(1)
     plt.xlim(0, W)
@@ -250,72 +203,21 @@ def part_show(k):
     canvas.draw()
     canvas.get_tk_widget().pack()
 
-def fitness(arrows, out=False, show=False):
-    tree = [[] for _ in range(len(stroke_sets))]
-    component = [[] for _ in range(len(stroke_sets))]
-    to_modify = []
-    for k, s in enumerate(stroke_sets):
-        for i in s:
-            if len(belong[i]) != 2:
-                continue
-            if arrows[i] == 2:
-                continue
-            k2 = belong[i][0] if belong[i][1] == k else belong[i][1]
-            swap = is_component_stroke(i, k)
-            if swap:
-                k, k2 = k2, k
-            if k2 not in tree[k]:
-                tree[k].append(k2)
-                ring = detect_ring(tree)
-                if len(ring) > 0:
-                    for u in range(len(sketch)):
-                        cnt = 0
-                        for r in ring:
-                            if u in stroke_sets[r]:
-                                cnt += 1
-                        if cnt >= 2:
-                            to_modify.append(u)
-                    tree[k].pop()
-            if swap:
-                k, k2 = k2, k
+def fitness(arrows, show=False):
 
-
-    top_obj = [1 for _ in range(len(stroke_sets))]
-    for k, s in enumerate(stroke_sets):
-        for i in s:
-            if not is_component_stroke(i, k):
-                top_obj[k] = 0
-                break
-    for k, is_obj in enumerate(top_obj):
-        s = stroke_sets[k]
-        component[k] = component_completion(k)
+    component = []
+    for k in range(len(stroke_sets)):
+        strokes = component_completion(arrows, k)
+        points = []
+        for stroke in strokes:
+            points += stroke
+        component.append((k, points))
         if show:
-            print(s, '完整部件' if is_obj else '不完整部件')
+            print(stroke_sets[k])
             part_show(k)
             time.sleep(1)
 
-    to_draw = [True for i in range(len(stroke_sets))]
-    img = np.zeros((H, W))
-    update = True
-    while update:
-        update = False
-        for i in range(len(stroke_sets)):
-            if not to_draw[i]:
-                continue
-            flag = 1
-            for j in range(len(stroke_sets)):
-                if not to_draw[j]:
-                    continue
-                if i in tree[j]:
-                    flag = 0
-                    break
-            if flag:
-                draw_component(img, component[i], ID=i+1)
-                to_draw[i] = False
-                update = True
-    if out:
-        cv2.imwrite('res.png', img)
-    return *score(img), to_modify
+    return score(component, show=show)
 
 def dfs(L, x):
     global best
@@ -333,6 +235,32 @@ def dfs(L, x):
             best = res[0]
             opt_arrows = copy.deepcopy(arrows)
 
+def mcts(L):
+    global best
+    global arrows
+    global opt_arrows
+    begin = datetime.now()
+    for x in L:
+        arrows[x] = 2
+    from monte_carlo_tree_search import MCTS, Node
+
+    def reward(self):
+        global best
+        global opt_arrows
+        val = fitness(list(self.data))[0]
+        if val > best:
+            best = val
+            opt_arrows = list(self.data)
+        return val
+    Node.reward = reward
+    tree = MCTS()
+    node = Node(tuple(arrows))
+    while not node.is_terminal():
+        for i in range(10):
+            tree.do_rollout(node)
+        node = tree.choose(node)
+    end = datetime.now()
+    print('mcts time:', (end - begin).seconds)
 
 root = tkinter.Tk()
 root.geometry(f'{W}x{H}')
@@ -397,14 +325,16 @@ def show_arrows():
     canvas.draw()
     canvas.get_tk_widget().pack()
 
-best = 0
+global_score, score_per_region = fitness(arrows)
+best = global_score
 opt_arrows = copy.deepcopy(arrows)
-global_score, score_per_region, to_modify = fitness(arrows)
-k = np.argmin(score_per_region)
-to_modify += stroke_sets[k]
-to_modify = list(set(to_modify))
-if len(to_modify) < 5:
-    dfs(to_modify, 0)
+k = min(4, len(stroke_sets))
+r = np.argpartition(score_per_region, -k)[-k:]
+to_modify = []
+for i in r:
+    to_modify += stroke_sets[i]
+to_modify = sorted(list(set(to_modify)))
+mcts(to_modify)
 arrows = opt_arrows
 show_arrows()
 
@@ -443,30 +373,19 @@ def on_mouse_move(event):
 
 def work():
     print(arrows)
-    global_score, score_per_region, to_modify = fitness(arrows)
+    global_score, score_per_region = fitness(arrows)
+    print(score_per_region[1], score_per_region[2])
     print(f'评价函数：{global_score}')
     fitness(arrows, show=True)
 
 def select():
     global arrows
-    img = np.zeros((H, W))
-    draw_component2(img, user_input, ID=1)
-    mx = -1
-    k = -1
-    A = (img == 1)
+    IoU = []
+    A = Polygon(user_input).buffer(0.01)
     for i in range(len(stroke_sets)):
-        B = (region == i + 2)
-        IoU = np.sum(np.logical_and(A, B)) / np.sum(np.logical_or(A, B))
-        if IoU > mx:
-            mx = IoU
-            k = i
-    for i in range(len(stroke_sets)):
-        B = (region == i + 2)
-        IoU = np.sum(np.logical_and(A, B)) / np.sum(np.logical_or(A, B))
-        if IoU > mx:
-            mx = IoU
-            k = i
-    assert k != -1
+        B = region_boundary[i]
+        IoU.append(B.intersection(A).area / B.union(A).area)
+    k = np.argmax(IoU)
     print(f'选定部件{k}')
 
     mx = -1e5
@@ -484,13 +403,13 @@ def select():
             arrows[L[x]] = 1
             adjust(L, x + 1)
         else:
-            new_strokes = component_completion(k)
+            new_strokes = component_completion(arrows, k)
             points = []
             for stroke in new_strokes:
                 points += stroke
             if not LineString(points).is_simple:
                 return
-            polygon1 = Polygon(points).buffer(0.001)
+            polygon1 = Polygon(points).buffer(0.01)
             intersect = polygon0.intersection(polygon1).area
             union = polygon0.union(polygon1).area
             iou = intersect / union

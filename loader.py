@@ -1,6 +1,8 @@
 import numpy as np
 import copy
 import cv2
+from datetime import datetime
+
 
 def load(img):
 
@@ -21,10 +23,26 @@ def load(img):
                     img[x + dx, y + dy] = 0
                     queue.append((x + dx, y + dy))
         return img
+    def min_filter(I):
+        H, W = I.shape[:2]
+        res = np.full((H, W), 255)
+        for x, y in np.ndindex((H, W)):
+            for dx, dy in [(0, 0), (-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, -1), (1, 1), (-1, 1)]:
+                if 0 <= x + dx < H and 0 <= y + dy < W:
+                    res[x, y] = min(res[x, y], I[x + dx, y + dy])
+        return res.astype(np.uint8)
+    def linear_dodge(I, I2):
+        H, W = I.shape[:2]
+        res = np.full((H, W), 255)
+        for x, y in np.ndindex((H, W)):
+            res[x, y] = min(255, int(I[x, y]) + int(I2[x, y]))
+        return res.astype(np.uint8)
 
     H, W = img.shape[:2]
-    img = cv2.GaussianBlur(img, (3, 3), 0)
+    # img = cv2.GaussianBlur(img, (3, 3), 0)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img2 = min_filter(img)
+    img = linear_dodge(img, img2)
     img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     img[img == 255] = 254
     img[img == 0] = 255
@@ -37,36 +55,42 @@ def load(img):
     # img = img.astype(np.uint8)
     # img = remove_background(img)
     # cv2.imwrite('before.png', img)
+    img = np.array(img).astype(np.uint8)
 
     img = thin(img)
     print('thining ok')
 
+    P = []
+    for x, y in np.ndindex((H, W)):
+        if img[x, y] == 255:
+            P.append((x, y))
+
     h = [eight_connected(), compute_juction(), compute_endpoint()]
-    img = process(img, h[0], in_place=True)
-    is_junction = process(img, h[1])
-    is_endpoint = process(img, h[2])
+    img = process(img, P, h[0], in_place=True)
+    junction = process(img, P, h[1])
+    endpoint = process(img, P, h[2])
     update = True
+
     while update:
-        img, update = prune(img, is_endpoint, is_junction)
-        is_junction = process(img, h[1])
-        is_endpoint = process(img, h[2])
+        img, update = prune(img, P, endpoint, junction)
+        junction = process(img, P, h[1])
+        endpoint = process(img, P, h[2])
 
     color_junction = [255, 0, 0] # blue in BGR mode
     color_stroke = [0, 255, 0] # green in BGR mode
 
     out = np.zeros((H, W, 3))
     for x, y in np.ndindex((H, W)):
-        if is_junction[x, y]:
+        if (x, y) in junction:
             out[x, y] = np.array(color_junction)
         elif img[x, y] != 0:
             out[x, y] = np.array(color_stroke)
         else:
             out[x, y] = np.array([0, 0, 0])
-    for x, y in np.ndindex((H, W)):
-        if is_junction[x, y]:
-            for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, -1), (1, 1), (-1, 1)]:
-                if 0 <= x + dx < H and 0 <= y + dy < W and (out[x + dx, y + dy] == color_stroke).all():
-                    out[x + dx, y + dy] = color_junction
+    for x, y in junction:
+        for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1), (-1, -1), (1, -1), (1, 1), (-1, 1)]:
+            if 0 <= x + dx < H and 0 <= y + dy < W and (out[x + dx, y + dy] == color_stroke).all():
+                out[x + dx, y + dy] = color_junction
     return out
 
 def build_sketch(img):
@@ -129,11 +153,16 @@ def build_region(img, which_stroke):
     for x, y in np.ndindex((H, W)):
         if (img[x, y] != [0, 0, 0]).any():
             region[x, y] = -1
+    I2 = np.zeros((H, W))
     def flood(res, I, x, y, region_ID=1):
+        nonlocal I2
         H, W = I.shape[:2]
-        queue = []
         I[x, y] = region_ID
+        queue = []
         queue.append([x, y])
+        X, Y = [], []
+        X.append(x)
+        Y.append(y)
         while len(queue) > 0:
             [x, y] = queue[0]
             del queue[0]
@@ -141,6 +170,11 @@ def build_region(img, which_stroke):
                 if 0 <= x + dx < H and 0 <= y + dy < W and I[x + dx, y + dy] == 0:
                     I[x + dx, y + dy] = region_ID
                     queue.append([x + dx, y + dy])
+                    X.append(x + dx)
+                    Y.append(y + dy)
+        xmin, xmax, ymin, ymax = np.min(X), np.max(X), np.min(Y), np.max(Y)
+        xmin, ymin = max(0, xmin - 1), max(0, ymin - 1)
+        xmax, ymax = min(H - 1, xmax + 1), min(W - 1, ymax + 1)
         if I[0, 0] == region_ID:
             # 背景区域
             for x, y in np.ndindex((H, W)):
@@ -151,24 +185,29 @@ def build_region(img, which_stroke):
                                 res.add(which_stroke[(x + dx, y + dy)])
             return
         # 处理无法同胚到圆盘的区域（亏格>0）
-        I2 = np.zeros((H, W))
         queue = []
-        I2[0, 0] = 1
-        queue.append([0, 0])
+        start = []
+        for x in [xmin, xmax]:
+            for y in [ymin, ymax]:
+                if I[x, y] != region_ID:
+                    start = [x, y]
+        I2[start[0], start[1]] = region_ID
+        queue.append(start)
         while len(queue) > 0:
             [x, y] = queue[0]
             del queue[0]
             for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
-                if 0 <= x + dx < H and 0 <= y + dy < W:
-                    if I[x + dx, y + dy] != region_ID and I2[x + dx, y + dy] == 0:
-                        I2[x + dx, y + dy] = 1
+                if xmin <= x + dx <= xmax and ymin <= y + dy <= ymax:
+                    if I[x + dx, y + dy] != region_ID and I2[x + dx, y + dy] != region_ID:
+                        I2[x + dx, y + dy] = region_ID
                         queue.append([x + dx, y + dy])
-        for x, y in np.ndindex((H, W)):
-            if I2[x, y] == 0:
-                for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
-                    if 0 <= x + dx < H and 0 <= y + dy < W:
-                        if I2[x + dx, y + dy] != 0 and (img[x + dx, y + dy] == color_stroke).all():
-                            res.add(which_stroke[(x + dx, y + dy)])
+        for x in range(xmin, xmax + 1):
+            for y in range(ymin, ymax + 1):
+                if I2[x, y] != region_ID:
+                    for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
+                        if xmin <= x + dx <= xmax and ymin <= y + dy <= ymax:
+                            if I2[x + dx, y + dy] == region_ID and (img[x + dx, y + dy] == color_stroke).all():
+                                res.add(which_stroke[(x + dx, y + dy)])
 
     stroke_sets = []
     region_ID = 1
@@ -183,5 +222,5 @@ def build_region(img, which_stroke):
                 region_ID += 1
 
     del stroke_sets[0] # 删除背景区域的边界
-    print(stroke_sets)
+    print('stroke sets', stroke_sets)
     return stroke_sets, region
