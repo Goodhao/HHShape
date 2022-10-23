@@ -33,7 +33,7 @@ You can do:
 - Press <kbd>Enter</kbd> to decompose shape components of this image.
 - Press <kbd>Esc</kbd> to go back to initial screen.
 - Click an arrow to change its direction and then the result of decomposition.
-- Draw a approximate contour to select a shape component (with local arrows adjustment). Press <kbd>a</kbd> to finish drawing.
+- Draw a approximate contour to select a shape component (with automatically local arrows adjustment). Press <kbd>a</kbd> to finish drawing.
 
 ![](demo.gif)
 
