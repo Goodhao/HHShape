@@ -106,6 +106,7 @@ def score(component, show=False):
     for k, points in component:
         polys[k] = Polygon(points).buffer(0.01)
     res = []
+    tot_area = 0
     for i in range(len(stroke_sets)):
         poly_region = Polygon(region_boundary[i]).buffer(0.01)
         region_area = poly_region.area
@@ -114,24 +115,28 @@ def score(component, show=False):
             hidden_area = polys[i].difference(poly_region).area
         else:
             cover_area, hidden_area = 0, 0
-        hidden_area_ratio = hidden_area / region_area
-        cover_area_ratio = cover_area / region_area
-        res.append(0.7 * cover_area_ratio + 0.3 * hidden_area_ratio)
+        tot_area += region_area
+        res.append(0.7 * cover_area + 0.3 * hidden_area)
     if show:
         plt.clf()
         ax.set_aspect(1)
         plt.xlim(0, W)
         plt.ylim(0, H)
+        def get_cmap(n, name='hsv'):
+            return plt.cm.get_cmap(name, n)
+        cmap = get_cmap(len(stroke_sets))
+        cc = [i for i in range(len(stroke_sets))]
+        random.shuffle(cc)
         for i in range(len(stroke_sets)):
             if i in polys.keys():
                 xx, yy = polys[i].exterior.coords.xy
                 X = np.array(xx.tolist())
                 Y = np.array(yy.tolist())
-                plt.plot(Y, H - X, color='r')
+                plt.plot(Y, H - X, color=cmap(cc[i]))
         plt.axis('off')
         canvas.draw()
         canvas.get_tk_widget().pack()
-    return np.sum(res) / len(res), res
+    return np.sum(res) / tot_area, res
 
 def is_component_stroke(arrows, i, k):
     assert i in stroke_sets[k]
@@ -374,7 +379,7 @@ def on_mouse_move(event):
 def work():
     print(arrows)
     global_score, score_per_region = fitness(arrows)
-    print(score_per_region[1], score_per_region[2])
+    print(score_per_region)
     print(f'评价函数：{global_score}')
     fitness(arrows, show=True)
 
@@ -383,7 +388,7 @@ def select():
     IoU = []
     A = Polygon(user_input).buffer(0.01)
     for i in range(len(stroke_sets)):
-        B = region_boundary[i]
+        B = Polygon(region_boundary[i]).buffer(0.01)
         IoU.append(B.intersection(A).area / B.union(A).area)
     k = np.argmax(IoU)
     print(f'选定部件{k}')
